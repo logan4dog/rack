@@ -304,102 +304,6 @@
 {{ end }}
 
 {{ define "timer-resources" }}
-  {{ if .Manifest.Timers }}
-    "TimerLauncher": {
-      "Type": "AWS::Lambda::Function",
-      "Properties": {
-        "Handler": "index.handler",
-        "Role": { "Fn::GetAtt": [ "TimerRole", "Arn" ] },
-        "Runtime": "nodejs6.10",
-        "Timeout": 60,
-        "Code": {
-          "ZipFile": { "Fn::Join": [ "\n", [
-            "exports.handler = function(event, context, cb) {",
-            "  var params = {",
-            "    cluster: event.cluster,",
-            "    taskDefinition: event.taskDefinition,",
-            "    count: 1,",
-            { "Fn::If": [ "FargateTimers",
-              "    launchType: 'FARGATE',",
-              "    launchType: 'EC2',"
-            ] },
-            "    networkConfiguration: {",
-            "      awsvpcConfiguration: {",
-            { "Fn::If": [ "FargateTimers",
-              "        assignPublicIp: 'ENABLED',",
-              { "Ref": "AWS::NoValue" }
-            ] },
-            "        subnets: [",
-            { "Fn::Sub": [ "          \"${Subnet0}\", \"${Subnet1}\"", {
-              "Subnet0": { "Fn::If": [ "Private",
-                { "Fn::ImportValue": { "Fn::Sub": "${Rack}:SubnetPrivate0" } },
-                { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Subnet0" } }
-              ] },
-              "Subnet1": { "Fn::If": [ "Private",
-                { "Fn::ImportValue": { "Fn::Sub": "${Rack}:SubnetPrivate1" } },
-                { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Subnet1" } }
-              ] }
-            } ] },
-            "        ]",
-            "      }",
-            "    }",
-            "  };",
-            "  var aws = require('aws-sdk');",
-            "  var ecs = new aws.ECS({maxRetries:10});",
-            "  ecs.runTask(params, function (err, res) {",
-            "    console.log('res', res);",
-            "    cb(err);",
-            "  });",
-            "};"
-          ] ] }
-        }
-      }
-    },
-    "TimerRole": {
-      "Type": "AWS::IAM::Role",
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Version": "2012-10-17",
-          "Statement": [
-            { "Effect": "Allow", "Action": [ "sts:AssumeRole" ], "Principal": { "Service": [ "events.amazonaws.com" ] } },
-            { "Effect": "Allow", "Action": [ "sts:AssumeRole" ], "Principal": { "Service": [ "lambda.amazonaws.com" ] } }
-          ]
-        },
-        "ManagedPolicyArns": [ "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" ],
-        "Path": "/convox/",
-        "Policies": [
-          {
-            "PolicyName": "TimerRole",
-            "PolicyDocument": {
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Action": [ "ecs:RunTask" ],
-                  "Resource": { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${AWS::StackName}-timer-*" },
-                  "Condition": {
-                    "ArnEquals": {
-                      "ecs:cluster": { "Fn::Join": [ "", [
-                        "arn:aws:ecs:", { "Ref": "AWS::Region" }, ":", { "Ref": "AWS::AccountId" }, ":cluster/", { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Cluster" } }
-                      ] ] }
-                    }
-                  }
-                },
-                {
-                  "Effect": "Allow",
-                  "Action": [ "iam:PassRole" ],
-                  "Resource": [
-                    { "Fn::GetAtt": [ "ExecutionRole", "Arn" ] },
-                    { "Fn::GetAtt": [ "ServiceRole", "Arn" ] }
-                  ]
-                }
-              ]
-            }
-          }
-        ]
-      }
-    },
-  {{ end }}
   {{ range $t := .Manifest.Timers }}
     "{{ upper .Name }}Timer": {
       "Type": "AWS::Events::Rule",
@@ -407,23 +311,25 @@
         "Name": { "Fn::Sub": "${AWS::StackName}-timer-{{.Name}}" },
         "ScheduleExpression": "cron({{.Cron}})",
         "Targets": [ {
-          "Arn": { "Fn::If": [ "FargateTimers",
-            { "Fn::GetAtt": [ "TimerLauncher", "Arn" ] },
-            { "Fn::Join": [ "", [ "arn:aws:ecs:", { "Ref": "AWS::Region" }, ":", { "Ref": "AWS::AccountId" }, ":cluster/", { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Cluster" } } ] ] }
-          ] },
-          "EcsParameters": { "Fn::If": [ "FargateTimers",
-            { "Ref": "AWS::NoValue" },
-            { "TaskCount": "1", "TaskDefinitionArn": { "Ref": "Timer{{ upper .Name }}Tasks" } }
-          ] },
-          "Id": "{{.Name}}",
-          "Input": { "Fn::If": [ "FargateTimers",
-            { "Fn::Join": [ "", [ "{ \"cluster\": \"", { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Cluster" } }, "\", \"taskDefinition\": \"", { "Ref": "Timer{{ upper .Name }}Tasks" }, "\" }" ] ] },
-            { "Ref": "AWS::NoValue" }
-          ] },
-          "RoleArn": { "Fn::If": [ "FargateTimers",
-            { "Ref": "AWS::NoValue" },
-            { "Fn::GetAtt": [ "TimerRole", "Arn" ] }
-          ] }
+          "Arn": { "Fn::Sub": [ "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${Cluster}", { "Cluster": { "Fn::Sub": "${Rack}:Cluster" } } ] },
+          "EcsParameters": {
+            "LaunchType": { "Fn::If": [ "FargateTimers", "FARGATE", "EC2" ] },
+            "NetworkConfiguration": { "Fn::If": [ "IsolateServices",
+              {
+                "AwsvpcConfiguration": {
+                  "AssignPublicIp": "DISABLED",
+                  "Subnets": { "Fn::If": [ "Private",
+                    [ { "Fn::ImportValue": { "Fn::Sub": "${Rack}:SubnetPrivate0" } }, { "Fn::ImportValue": { "Fn::Sub": "${Rack}:SubnetPrivate1" } } ],
+                    [ { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Subnet0" } }, { "Fn::ImportValue": { "Fn::Sub": "${Rack}:Subnet1" } } ]
+                  ] }
+                }
+              },
+              { "Ref": "AWS::NoValue" }
+            ] },
+            "TaskCount": "1",
+            "TaskDefinitionArn": { "Ref": "Timer{{ upper .Name }}Tasks" }
+          },
+          "Id": "{{.Name}}"
         } ]
       }
     },
