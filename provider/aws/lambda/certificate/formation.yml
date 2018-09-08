@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  Bucket:
+    Type: String
+  Domain:
+    Type: String
+    Default: foo.example.org
+Outputs:
+  Certificate:
+    Value: !Ref Certificate
+Resources:
+  Certificate:
+    Type: AWS::CloudFormation::CustomResource
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt CertificateHandler.Arn
+      Domain: !Ref Domain
+  CertificateHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref Bucket
+        S3Key: lambda/certificate/handler.zip
+      Handler: handler
+      Role: !GetAtt CertificateHandlerRole.Arn
+      Runtime: go1.x
+      Timeout: 60
+  CertificateHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement: [ { Effect: Allow, Principal: { Service: [ lambda.amazonaws.com ] }, Action: "sts:AssumeRole" } ]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /convox/
+      Policies:
+        - PolicyName: certificate
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - acm:DeleteCertificate
+                  - acm:ImportCertificate
+                Resource: "*"
