@@ -37,23 +37,24 @@ import (
 	"github.com/convox/rack/pkg/manifest1"
 	"github.com/convox/rack/pkg/structs"
 	docker "github.com/fsouza/go-dockerclient"
+	yaml "gopkg.in/yaml.v2"
 )
 
 type Formation struct {
-	Parameters map[string]FormationParameter
-	Resources  map[string]FormationResource
+	Parameters map[string]FormationParameter `json:"Parameters" yaml:"Parameters"`
+	Resources  map[string]FormationResource  `json:"Resources" yaml:"Resources"`
 }
 
 type FormationParameter struct {
-	Default     interface{}
-	Description string
-	NoEcho      bool
-	Type        string
+	Default     string `json:"Default" yaml:"Default"`
+	Description string `json:"Description" yaml:"Description"`
+	NoEcho      bool   `json:"NoEcho" yaml:"NoEcho"`
+	Type        string `json:"Type" yaml:"Type"`
 }
 
 type FormationResource struct {
-	Type       string
-	Properties map[string]interface{}
+	Type       string                 `json:"Type" yaml:"Type"`
+	Properties map[string]interface{} `json:"Properties" yaml:"Properties"`
 }
 
 func (p *Provider) accountId() (string, error) {
@@ -228,8 +229,8 @@ func (p *Provider) createdTime() string {
 	return time.Now().Format(sortableTime)
 }
 
-func formationParameters(data []byte) (map[string]bool, error) {
-	f, err := parseFormation(data)
+func formationParameters(data []byte, format string) (map[string]bool, error) {
+	f, err := parseFormation(data, format)
 	if err != nil {
 		return nil, err
 	}
@@ -279,11 +280,18 @@ func humanStatus(original string) string {
 	}
 }
 
-func parseFormation(data []byte) (*Formation, error) {
+func parseFormation(data []byte, format string) (*Formation, error) {
 	var f Formation
 
-	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, err
+	switch format {
+	case "yaml":
+		if err := yaml.Unmarshal(data, &f); err != nil {
+			return nil, err
+		}
+	default:
+		if err := json.Unmarshal(data, &f); err != nil {
+			return nil, err
+		}
 	}
 
 	return &f, nil
@@ -1232,7 +1240,7 @@ func (p *Provider) taskDefinitionRelease(arn string) (string, error) {
 // updateStack updates a stack
 //   template is url to a template or empty string to reuse previous
 //   changes is a list of parameter changes to make (does not need to include every param)
-func (p *Provider) updateStack(name string, template []byte, changes map[string]string, tags map[string]string) error {
+func (p *Provider) updateStack(name string, template []byte, format string, changes map[string]string, tags map[string]string) error {
 	cache.Clear("describeStacks", nil)
 	cache.Clear("describeStacks", name)
 
@@ -1273,7 +1281,7 @@ func (p *Provider) updateStack(name string, template []byte, changes map[string]
 
 		req.TemplateURL = aws.String(tu)
 
-		fp, err := formationParameters(template)
+		fp, err := formationParameters(template, format)
 		if err != nil {
 			return err
 		}
