@@ -44,8 +44,7 @@ type Provider struct {
 	Region   string
 	Endpoint string
 
-	AsgSpot             string
-	AsgStandard         string
+	AutoScalingGroup    string
 	AvailabilityZones   string
 	BuildCluster        string
 	ClientId            string
@@ -62,14 +61,12 @@ type Provider struct {
 	InternalOnly        bool
 	LogBucket           string
 	NotificationTopic   string
-	OnDemandMinCount    int
 	Password            string
 	Private             bool
 	Rack                string
 	SecurityGroup       string
 	SettingsBucket      string
 	SshKey              string
-	SpotInstances       bool
 	Subnets             string
 	SubnetsPrivate      string
 	StackId             string
@@ -136,8 +133,7 @@ func (p *Provider) loadParams() error {
 		labels[k] = *v
 	}
 
-	p.AsgSpot = labels["rack.AsgSpot"]
-	p.AsgStandard = labels["rack.AsgStandard"]
+	p.AutoScalingGroup = labels["rack.AutoScalingGroup"]
 	p.AvailabilityZones = labels["rack.AvailabilityZones"]
 	p.BuildCluster = labels["rack.BuildCluster"]
 	p.CloudformationTopic = labels["rack.CloudformationTopic"]
@@ -152,11 +148,9 @@ func (p *Provider) loadParams() error {
 	p.InternalOnly = labels["rack.InternalOnly"] == "Yes"
 	p.LogBucket = labels["rack.LogBucket"]
 	p.NotificationTopic = labels["rack.NotificationTopic"]
-	p.OnDemandMinCount = intParam(labels["rack.OnDemandMinCount"], 2)
 	p.Private = labels["Private"] == "Yes"
 	p.SecurityGroup = labels["rack.SecurityGroup"]
 	p.SettingsBucket = labels["rack.SettingsBucket"]
-	p.SpotInstances = labels["rack.SpotInstances"] == "Yes"
 	p.SshKey = labels["rack.SshKey"]
 	p.Subnets = labels["rack.Subnets"]
 	p.SubnetsPrivate = labels["rack.SubnetsPrivate"]
